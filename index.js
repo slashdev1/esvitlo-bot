@@ -8,23 +8,20 @@ import * as tools from './tools.js'
 
 config()
 const TELEGRAM_URI = `https://api.telegram.org/bot${process.env.TELEGRAM_API_TOKEN}/sendMessage`
-const PING_FILE = path.join(process.cwd(), 'ping')
+const PING_FILE = path.join(process.cwd(), 'ping.json')
 const PING_OBJ = {
     lastSuccTimeStamp: 0,
     firstSuccTimeStamp: 0,
     lastFaultyTimeStamp: 0,
     firstFaultyTimeStamp: 0
 }
+const SUBSCRIBERS_FILE = path.join(process.cwd(), 'subscribers.json')
+const SUBSCRIBERS = {}
 const TIME_ZONE = parseInt(process.env.TIME_ZONE)
+const DEBUG = parseInt(process.env.DEBUG)
 
 const app = express()
 
-/*app.use(express.json())
-app.use(
-    express.urlencoded({
-        extended: true
-    })
-)*/
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(bodyParser.raw());
@@ -34,7 +31,9 @@ function handleMessageText(messageText, chatId) {
     let responseText = 'Невідома команда'
 
     if (messageTextLC === 'svitlo' || messageTextLC === 'світло') {
-        console.log(PING_OBJ)
+        if (DEBUG) {
+            console.log(PING_OBJ)
+        }
         
         if (PING_OBJ.lastSuccTimeStamp || PING_OBJ.lastFaultyTimeStamp)
             try {
@@ -57,23 +56,42 @@ function handleMessageText(messageText, chatId) {
             responseText = '🤔 Невідомо'
         }
 
-        console.log(responseText)
+        if (DEBUG) {
+            console.log(responseText)
+        }
     } else if (messageTextLC.startsWith('/set')) {
         let jsonText = messageText.slice(5)
         // handle json to use correct syntax
         jsonText = jsonText.replace(/(['"])?([a-z0-9A-Z_]+)(['"])?:/g, '"$2": ')
-        const obj = JSON.parse(jsonText)
+        let obj
+        try {
+            obj = JSON.parse(jsonText)   
+        } catch (error) { }
         if (typeof obj === 'object') {
             Object.keys(obj).forEach(k => {
                 if (k in PING_OBJ) {
                     PING_OBJ[k] = obj[k]
                 }
             })
-            console.log(PING_OBJ)
+            if (DEBUG) {
+                console.log(PING_OBJ)
+            }
             responseText = 'Ок'
         } else {
             responseText = '😞 Помилка: некоректний json'
         }
+    } else if (messageTextLC.startsWith('/subscribe')) {
+        SUBSCRIBERS[chatId] = true
+
+        // store to file
+        fs.writeJsonSync(SUBSCRIBERS_FILE, SUBSCRIBERS)
+        responseText = 'Ви підписані на повідомлення про світло'
+    } else if (messageTextLC.startsWith('/unsubscribe')) {
+        delete(SUBSCRIBERS[chatId])
+
+        // store to file
+        fs.writeJSON(SUBSCRIBERS_FILE, SUBSCRIBERS)
+        responseText = 'Ви відпідписані від повідомлень про світло'
     } else if (messageTextLC === '/start') {
         responseText = 'Для того щоб дізнатись чи є світло напишіть боту слово "світло" або "svitlo" без лапків'
     }
@@ -81,9 +99,37 @@ function handleMessageText(messageText, chatId) {
     return responseText
 }
 
+function sendNotificationToSubscribers(pingStatus) {
+    let responseText
+    if (pingStatus) {
+        if (PING_OBJ.lastFaultyTimeStamp > PING_OBJ.lastSuccTimeStamp) {
+            responseText = '🌞 Дали світло. Темрява тривала ' + tools.millisecondsToStr(Math.round((Date.now() - PING_OBJ.firstFaultyTimeStamp)))
+        }
+    } else {
+        if (PING_OBJ.lastFaultyTimeStamp < PING_OBJ.lastSuccTimeStamp) {
+            responseText = '🌚 Cвітла не стало'
+        }
+    }
+
+    if (!responseText) {
+        return
+    }
+
+    for (const chatId in SUBSCRIBERS) {
+        try {
+            axios.post(TELEGRAM_URI, {
+                chat_id: chatId,
+                text: responseText
+            })
+        } catch (error) { }
+    }
+}
+
 app.post('/', async (req, res) => {
     const timeStamp = Date.now()
     const pingStatus = parseInt(req.body?.ping)
+
+    sendNotificationToSubscribers(pingStatus)
 
     if (pingStatus) {
         PING_OBJ.lastSuccTimeStamp = timeStamp
@@ -94,7 +140,9 @@ app.post('/', async (req, res) => {
         PING_OBJ.firstSuccTimeStamp = 0
         PING_OBJ.firstFaultyTimeStamp = PING_OBJ.firstFaultyTimeStamp || PING_OBJ.lastFaultyTimeStamp
     }
-    console.log(`pingStatus=${pingStatus}`)
+    if (DEBUG) {
+        console.log(`pingStatus=${pingStatus}`)
+    }
 
     try {
         fs.writeJSON(PING_FILE, PING_OBJ, err => {
@@ -143,9 +191,16 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
 })
 
+// fill object PING_OBJ from json file
 try {
     const obj = fs.readJSONSync(PING_FILE)
     Object.keys(obj).forEach(k => { if (k in PING_OBJ) { PING_OBJ[k] = obj[k] } } )
+} catch (error) { }
+
+// fill object SUBSCRIBERS from json file
+try {
+    const obj = fs.readJSONSync(SUBSCRIBERS_FILE)
+    Object.keys(obj).forEach(k => { SUBSCRIBERS[k] = obj[k] } )
 } catch (error) { }
 
 // use this command to set webhook
