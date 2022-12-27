@@ -1,15 +1,8 @@
 import fs from 'fs-extra'
 
-
-function getFileCotent(fileName) {
-    if (fs.existsSync(fileName)) {
-        try {
-            return fs.readFileSync(fileName).toString();
-        } catch (e) {}
-    }
-
-    return null
+function getLocalDateString(timeStamp, timeZone = 0) {
+    return new Date(timeStamp + timeZone * 1000 * 3600).toLocaleDateString("uk-uk", { hour: "2-digit", minute: "2-digit"})
 }
 
-export { getFileCotent }
+export { getLocalDateString }
   
