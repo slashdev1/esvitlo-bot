@@ -8,14 +8,15 @@ import * as tools from './tools.js'
 
 config()
 const TELEGRAM_URI = `https://api.telegram.org/bot${process.env.TELEGRAM_API_TOKEN}/sendMessage`
-const PING_FILE = path.join(process.cwd(), 'ping.json')
+const FOLDER_TO_STORE_JSON = process.env.FOLDER_TO_STORE_JSON || process.cwd()
+const PING_FILE = path.join(FOLDER_TO_STORE_JSON, 'ping.json')
 const PING_OBJ = {
     lastSuccTimeStamp: 0,
     firstSuccTimeStamp: 0,
     lastFaultyTimeStamp: 0,
     firstFaultyTimeStamp: 0
 }
-const SUBSCRIBERS_FILE = path.join(process.cwd(), 'subscribers.json')
+const SUBSCRIBERS_FILE = path.join(FOLDER_TO_STORE_JSON, 'subscribers.json')
 const SUBSCRIBERS = {}
 const TIME_ZONE = parseInt(process.env.TIME_ZONE)
 const DEBUG = parseInt(process.env.DEBUG)
